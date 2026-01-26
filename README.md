@@ -31,5 +31,5 @@ All APIs are tested using **Postman**.
 
 ---
 
-## Project Structure (MVC)
+## MVC Project Structure
 
