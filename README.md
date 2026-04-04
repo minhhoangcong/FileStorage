@@ -1,35 +1,314 @@
-# nodejs-secure-rest-api
-Secure RESTful API built with Node.js and Express using JWT authentication, role-based access control (admin), file upload with Multer, and MVC architecture. Tested with Postman.
+# Cloud-based File Storage and Management System (Backend)
 
-# Secure RESTful API with Node.js
+Refactor + extend from original `nodejs-secure-rest-api` codebase.
 
-This is a backend RESTful API built using **Node.js** and **Express**, following the **MVC architecture**.  
-The project includes **JWT-based authentication**, **role-based authorization (Admin panel)**, and **file upload functionality using Multer**.  
-All APIs are tested using **Postman**.
+Current phase focuses on stable local backend with:
+- auth (register/login/JWT)
+- role-based access (user/admin)
+- file upload + metadata
+- file list/download/delete with ownership check
+- file preview (image/video/audio/pdf/txt)
+- file metadata edit (rename/folder/tags/star)
+- create and manage folders (logical folders)
+- search, filter, sort, pagination
+- quota per user (`MAX_USER_STORAGE_MB`)
+- admin view all files + admin stats + user role management
+- admin folder management + audit logs
+- built-in frontend demo page (no Postman required)
 
----
+Later phase can switch storage from local disk to AWS S3 without rewriting business logic.
 
-## Features
+## 1. Tech Stack
 
-- RESTful API using Node.js & Express
-- JWT Authentication and Authorization
-- Role-based Access Control (Admin & User)
-- Protected routes using Bearer Token
-- File upload using Multer
-- MVC architecture for clean code structure
-- API testing with Postman
+- Node.js + Express
+- MongoDB + Mongoose
+- JWT authentication
+- Multer (upload middleware)
+- MVC-style folder organization
 
----
+## 2. Project Structure
 
-## Tech Stack
+```txt
+config/
+  db.js
+controllers/
+  authController.js
+  fileController.js
+  adminController.js
+helpers/
+  authHelper.js
+middlewares/
+  authMiddleware.js
+  uploadMiddleware.js
+  errorMiddleware.js
+models/
+  userModel.js
+  fileModel.js
+  folderModel.js
+  auditLogModel.js
+routes/
+  authRoute.js
+  fileRoutes.js
+  adminRoutes.js
+services/
+  adminSeedService.js
+  auditLogService.js
+  storage/
+    storageService.js
+    localStorageService.js
+uploads/
+public/
+server.js
+```
 
-- Backend: Node.js, Express.js  
-- Authentication: JSON Web Token (JWT)  
-- File Upload: Multer  
-- Database: MongoDB (if used)  
-- Testing Tool: Postman  
+## 3. MongoDB Schemas
 
----
+### User
+- `name` (String, required)
+- `email` (String, required, unique)
+- `password` (String, required, hashed)
+- `phone` (String, required, unique)
+- `address` (String, required)
+- `role` (Number: `0=user`, `1=admin`)
+- timestamps
 
-## MVC Project Structure
+### File
+- `originalFilename` (String, required)
+- `storedFilename` (String, required, unique)
+- `storagePath` (String, required)
+- `size` (Number, required)
+- `mimeType` (String, required)
+- `uploadedBy` (ObjectId -> users, required)
+- `folder` (String, default `root`)
+- `tags` (String[])
+- `isStarred` (Boolean)
+- `visibility` (`private/public`, default `private`)
+- timestamps (`createdAt` is upload time)
+
+### Audit Log
+- `actor` (ObjectId -> users)
+- `action` (String)
+- `targetType` (`user/file/folder/system`)
+- `targetId` (ObjectId, optional)
+- `targetLabel` (String)
+- `metadata` (Mixed)
+- timestamps
+
+## 4. API Endpoints
+
+Base URL: `http://localhost:8080/api/v1`
+
+### Auth
+
+1. `POST /auth/register`
+- Purpose: register new account
+- Access: public
+- Body:
+```json
+{
+  "name": "Alice",
+  "email": "alice@example.com",
+  "password": "123456",
+  "phone": "0123456789",
+  "address": "HCMC"
+}
+```
+
+2. `POST /auth/login`
+- Purpose: login and receive JWT token
+- Access: public
+- Body:
+```json
+{
+  "email": "alice@example.com",
+  "password": "123456"
+}
+```
+
+3. `GET /auth/me`
+- Purpose: get current user info from token
+- Access: `user/admin`
+- Header: `Authorization: Bearer <token>`
+
+### Files
+
+1. `POST /files/upload`
+- Purpose: upload one file and save metadata
+- Access: `user/admin`
+- Content-Type: `multipart/form-data`
+- Form key: `file`
+
+2. `GET /files/my-files`
+- Purpose: list files uploaded by current user
+- Access: `user/admin`
+- Query: `q, type, folder, starred, sort, page, limit`
+
+3. `GET /files/stats`
+- Purpose: get user storage stats
+- Access: `user/admin`
+
+4. `GET /files/folders`
+- Purpose: list current user's folders
+- Access: `user/admin`
+
+5. `POST /files/folders`
+- Purpose: create folder
+- Access: `user/admin`
+- Body:
+```json
+{
+  "name": "semester8/project"
+}
+```
+
+6. `DELETE /files/folders`
+- Purpose: delete folder (only when empty)
+- Access: `user/admin`
+- Body:
+```json
+{
+  "path": "semester8/project"
+}
+```
+
+- Force delete (remove all files/subfolders):
+```json
+{
+  "path": "semester8/project",
+  "force": true
+}
+```
+
+7. `GET /files/:id/preview`
+- Purpose: preview media/doc files in browser
+- Access: owner or admin
+
+8. `GET /files/:id/download`
+- Purpose: download file
+- Access: owner or admin
+
+9. `PATCH /files/:id/meta`
+- Purpose: update metadata (`originalFilename, folder, tags, isStarred`)
+- Access: owner or admin
+
+10. `DELETE /files/:id`
+- Purpose: delete file metadata + local file content
+- Access: owner or admin
+
+### Admin
+
+1. `GET /admin/files`
+- Purpose: admin view all files in system
+- Access: `admin`
+- Query: `q, owner, type, sort, page, limit`
+
+2. `GET /admin/stats`
+- Purpose: get system stats (users/files/storage)
+- Access: `admin`
+
+3. `GET /admin/users`
+- Purpose: list all users for management
+- Access: `admin`
+
+4. `PATCH /admin/users/:id/role`
+- Purpose: update user role (`0` user, `1` admin)
+- Access: `admin`
+- Safeguard:
+  - admin cannot demote self
+  - system always keeps at least one admin
+
+5. `GET /admin/folders`
+- Purpose: list all folders across users
+- Access: `admin`
+
+6. `DELETE /admin/folders`
+- Purpose: delete a user's folder
+- Access: `admin`
+- Body:
+```json
+{
+  "ownerId": "USER_OBJECT_ID",
+  "path": "semester8/project",
+  "force": true
+}
+```
+
+7. `GET /admin/audit-logs`
+- Purpose: view admin/system actions log
+- Access: `admin`
+
+## 5. Local Run
+
+1. Install dependencies:
+```bash
+npm install
+```
+
+2. Create `.env` from `.env.example`:
+```env
+PORT=8080
+DEV_MODE=development
+MONGO_URL=mongodb://127.0.0.1:27017/nodejs-secure-rest-api
+JWT_SECRET=change_me_please
+MAX_USER_STORAGE_MB=200
+SEED_ADMIN_ON_START=false
+ADMIN_NAME=System Admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=Admin@123456
+ADMIN_PHONE=0900000000
+ADMIN_ADDRESS=HCMC
+```
+
+3. Start server:
+```bash
+npm run start
+```
+or dev mode:
+```bash
+npm run server
+```
+
+4. Open frontend demo:
+- `http://localhost:8080/`
+- Register -> Login -> Upload -> Preview -> Download/Delete
+- Use search/filter/sort and folder/tags
+- If account role is admin (`role=1` in MongoDB), use:
+  - `Admin: All Files`
+  - `Admin: Users`
+
+5. Optional: auto seed admin on startup
+- Set in `.env`:
+```env
+SEED_ADMIN_ON_START=true
+ADMIN_NAME=System Admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=Admin@123456
+ADMIN_PHONE=0900000000
+ADMIN_ADDRESS=HCMC
+```
+- Restart server. If user `ADMIN_EMAIL` exists, system upgrades role to admin.
+
+## 6. Frontend Demo Features
+- Auth screen (register/login)
+- My Drive dashboard with file cards
+- Preview modal for image/video/audio/pdf/txt
+- Metadata actions: star, rename, move folder
+- Admin panel: list users and change roles
+- Admin panel: browse all files system-wide
+- Admin panel: browse folders system-wide and force-delete
+- Admin panel: view audit logs
+
+## 7. Cloud-Ready Design (Next Step)
+
+Current implementation uses `localStorageService`.
+To migrate to AWS S3 later:
+
+1. Add `s3StorageService` implementing same method signatures:
+- `saveBuffer(file, userId)`
+- `deleteFile(storagePath)`
+- `getAbsolutePath(storagePath)` (or return signed URL equivalent)
+
+2. Replace service usage in `fileController` from local to S3 service.
+
+This keeps APIs, DB schema, and RBAC unchanged while changing only storage implementation.
 

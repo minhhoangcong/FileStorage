@@ -1,38 +1,54 @@
-import JWT from 'jsonwebtoken'
-import userModel from '../models/userModel.js' // required import
+import JWT from "jsonwebtoken";
+import userModel from "../models/userModel.js";
 
-// Protected Route
 export const requireSignIn = async (req, res, next) => {
-    try {
-        const decode = JWT.verify(
-            req.headers.authorization,
-            process.env.JWT_SECRET
-        );
-        req.user = decode;
-        next();
-    } catch (error) {
-        console.log(error);
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).send({
+        success: false,
+        message: "Authorization token is required",
+      });
     }
+
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.split(" ")[1]
+      : authHeader;
+
+    const decode = JWT.verify(token, process.env.JWT_SECRET);
+    const user = await userModel.findById(decode._id).select("_id role");
+    if (!user) {
+      return res.status(401).send({
+        success: false,
+        message: "Invalid token user",
+      });
+    }
+
+    req.user = user;
+    return next();
+  } catch (_error) {
+    return res.status(401).send({
+      success: false,
+      message: "Invalid or expired token",
+    });
+  }
 };
 
-// admin access
 export const isAdmin = async (req, res, next) => {
-    try {
-        const user = await userModel.findById(req.user._id);
-        if (user.role !== 1) {
-            return res.status(401).send({
-                success: false,
-                message: "Unauthorized Access",
-            });
-        } else {
-            next();
-        }
-    } catch (error) {
-        console.log(error);
-        res.status(401).send({
-            success: false,
-            message: "Error in admin middleware",
-            error,
-        });
+  try {
+    if (req.user.role !== 1) {
+      return res.status(403).send({
+        success: false,
+        message: "Unauthorized access",
+      });
     }
+
+    return next();
+  } catch (error) {
+    return res.status(401).send({
+      success: false,
+      message: "Error in admin middleware",
+      error: error.message,
+    });
+  }
 };

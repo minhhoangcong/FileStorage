@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nimbus Drive Local</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+
+    <main class="layout">
+      <section class="auth-card" id="authCard">
+        <h1>Nimbus Drive</h1>
+
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="login">Login</button>
+          <button class="auth-tab" data-tab="register">Register</button>
+        </div>
+
+        <form id="loginForm" class="auth-form active">
+          <input type="email" name="email" placeholder="Email" required />
+          <input type="password" name="password" placeholder="Password" required />
+          <button type="submit">Sign in</button>
+        </form>
+
+        <form id="registerForm" class="auth-form">
+          <input type="text" name="name" placeholder="Full name" required />
+          <input type="email" name="email" placeholder="Email" required />
+          <input type="password" name="password" placeholder="Password" required />
+          <input type="text" name="phone" placeholder="Phone" required />
+          <input type="text" name="address" placeholder="Address" required />
+          <button type="submit">Create account</button>
+        </form>
+      </section>
+
+      <section class="app hidden" id="appShell">
+        <aside class="sidebar">
+          <h2>Nimbus</h2>
+          <p id="userInfo"></p>
+          <nav>
+            <button class="nav-btn active" data-view="my">My Drive</button>
+            <button class="nav-btn" data-view="starred">Starred</button>
+            <button class="nav-btn hidden" data-view="adminFiles" id="adminFilesNav">
+              Admin: All Files
+            </button>
+            <button class="nav-btn hidden" data-view="adminUsers" id="adminUsersNav">
+              Admin: Users
+            </button>
+            <button class="nav-btn hidden" data-view="adminFolders" id="adminFoldersNav">
+              Admin: Folders
+            </button>
+            <button class="nav-btn hidden" data-view="adminLogs" id="adminLogsNav">
+              Admin: Logs
+            </button>
+          </nav>
+          <button id="logoutBtn" class="ghost">Logout</button>
+        </aside>
+
+        <section class="main-panel">
+          <header class="topbar">
+            <div class="topbar-title">
+              <h3 id="viewTitle">My Drive</h3>
+              <p id="viewSubtitle">Manage your files</p>
+            </div>
+            <div class="search-wrap">
+              <input id="searchInput" type="text" placeholder="Search files by name/tag..." />
+              <select id="typeFilter">
+                <option value="">All types</option>
+                <option value="image">Images</option>
+                <option value="video">Videos</option>
+                <option value="audio">Audio</option>
+                <option value="application">Docs/PDF</option>
+                <option value="text">Text</option>
+              </select>
+              <select id="sortFilter">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="nameAsc">Name A-Z</option>
+                <option value="nameDesc">Name Z-A</option>
+                <option value="sizeAsc">Size small-large</option>
+                <option value="sizeDesc">Size large-small</option>
+              </select>
+              <button id="refreshBtn" class="ghost">Refresh</button>
+            </div>
+          </header>
+
+          <section class="stat-grid">
+            <article class="stat-card">
+              <h4>Total Files</h4>
+              <p id="totalFilesValue">0</p>
+            </article>
+            <article class="stat-card">
+              <h4>Used Storage</h4>
+              <p id="usedStorageValue">0 MB</p>
+            </article>
+            <article class="stat-card">
+              <h4>Storage Limit</h4>
+              <p id="storageLimitValue">0 MB</p>
+            </article>
+            <article class="stat-card">
+              <h4>Usage</h4>
+              <p id="storageUsagePercent">0%</p>
+            </article>
+          </section>
+
+          <section class="upload-box">
+            <input type="file" id="fileInput" />
+            <select id="folderSelect">
+              <option value="root">root</option>
+            </select>
+            <input type="text" id="tagsInput" placeholder="Tags (comma separated)" />
+            <button id="uploadBtn">Upload</button>
+          </section>
+
+          <section class="folder-box">
+            <input type="text" id="newFolderInput" placeholder="Create new folder (e.g. semester8/project)" />
+            <button id="createFolderBtn" class="ghost">Create Folder</button>
+            <div id="folderChips" class="folder-chips"></div>
+          </section>
+
+          <section id="filesSection">
+            <div class="file-grid" id="fileGrid"></div>
+            <div class="pagination">
+              <button id="prevPageBtn" class="ghost">Prev</button>
+              <span id="pageInfo">Page 1/1</span>
+              <button id="nextPageBtn" class="ghost">Next</button>
+            </div>
+          </section>
+
+          <section id="adminUsersSection" class="hidden">
+            <div class="admin-head">
+              <h4>User Management</h4>
+              <button id="reloadUsersBtn" class="ghost">Reload users</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="adminFoldersSection" class="hidden">
+            <div class="admin-head">
+              <h4>Folder Management</h4>
+              <button id="reloadFoldersBtn" class="ghost">Reload folders</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Path</th>
+                    <th>Owner</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="adminFoldersTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="adminLogsSection" class="hidden">
+            <div class="admin-head">
+              <h4>Audit Logs</h4>
+              <button id="reloadLogsBtn" class="ghost">Reload logs</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                  </tr>
+                </thead>
+                <tbody id="adminLogsTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="previewModal">
+      <div class="preview-head">
+        <h4 id="previewTitle">Preview</h4>
+        <button id="closePreviewBtn" class="ghost">Close</button>
+      </div>
+      <div id="previewBody"></div>
+    </dialog>
+
+    <div class="toast hidden" id="toast"></div>
+    <script type="module" src="/app.js?v=20260404-5"></script>
+  </body>
+</html>
