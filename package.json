@@ -1,12 +1,13 @@
 {
   "name": "new",
   "version": "1.0.0",
-  "description": "",
+  "description": "Nimbus Drive backend - secure file storage REST API",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "server": "nodemon server.js"
+    "server": "nodemon server.js",
+    "check": "node --check server.js"
   },
   "keywords": [],
   "author": "",

@@ -5,11 +5,13 @@ import AuditLogModel from "../models/auditLogModel.js";
 import { createAuditLog } from "../services/auditLogService.js";
 
 const resolveAdminListQuery = (req) => {
-  const { q, owner, type, sort = "newest", page = 1, limit = 50 } = req.query;
+  const { q, owner, type, includeDeleted = "false", sort = "newest", page = 1, limit = 50 } =
+    req.query;
   const parsedPage = Math.max(1, Number(page) || 1);
   const parsedLimit = Math.min(100, Math.max(1, Number(limit) || 50));
 
   const filter = {};
+  if (includeDeleted !== "true") filter.isDeleted = false;
   if (q) {
     filter.$or = [
       { originalFilename: { $regex: q, $options: "i" } },
@@ -206,11 +208,12 @@ export const updateUserRoleController = async (req, res) => {
 
 export const getAllFoldersController = async (req, res) => {
   try {
-    const { owner, q, page = 1, limit = 50 } = req.query;
+    const { owner, q, includeDeleted = "false", page = 1, limit = 50 } = req.query;
     const parsedPage = Math.max(1, Number(page) || 1);
     const parsedLimit = Math.min(100, Math.max(1, Number(limit) || 50));
 
     const filter = {};
+    if (includeDeleted !== "true") filter.isDeleted = false;
     if (owner) filter.createdBy = owner;
     if (q) filter.path = { $regex: q, $options: "i" };
 

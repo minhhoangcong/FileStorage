@@ -12,8 +12,13 @@ Current phase focuses on stable local backend with:
 - create and manage folders (logical folders)
 - search, filter, sort, pagination
 - quota per user (`MAX_USER_STORAGE_MB`)
+- trash bin (soft delete + restore + permanent delete)
+- share links (public download/preview with expiry)
+- multi-file upload + drag/drop + upload progress (frontend)
 - admin view all files + admin stats + user role management
 - admin folder management + audit logs
+- basic security hardening (security headers, CORS policy, auth rate-limit)
+- health check endpoint (`GET /healthz`)
 - built-in frontend demo page (no Postman required)
 
 Later phase can switch storage from local disk to AWS S3 without rewriting business logic.
@@ -34,6 +39,7 @@ config/
 controllers/
   authController.js
   fileController.js
+  fileControllerV2.js
   adminController.js
 helpers/
   authHelper.js
@@ -41,11 +47,14 @@ middlewares/
   authMiddleware.js
   uploadMiddleware.js
   errorMiddleware.js
+  securityHeadersMiddleware.js
+  rateLimitMiddleware.js
 models/
   userModel.js
   fileModel.js
   folderModel.js
   auditLogModel.js
+  shareLinkModel.js
 routes/
   authRoute.js
   fileRoutes.js
@@ -54,8 +63,10 @@ services/
   adminSeedService.js
   auditLogService.js
   storage/
+    index.js
     storageService.js
     localStorageService.js
+    s3StorageService.js
 uploads/
 public/
 server.js
@@ -83,7 +94,27 @@ server.js
 - `tags` (String[])
 - `isStarred` (Boolean)
 - `visibility` (`private/public`, default `private`)
+- `isDeleted` (Boolean, default `false`)
+- `deletedAt` (Date, nullable)
+- `deletedBy` (ObjectId -> users, nullable)
 - timestamps (`createdAt` is upload time)
+
+### Folder
+- `name` (String, required)
+- `path` (String, required, unique per user)
+- `createdBy` (ObjectId -> users, required)
+- `isDeleted` (Boolean, default `false`)
+- `deletedAt` (Date, nullable)
+- `deletedBy` (ObjectId -> users, nullable)
+- timestamps (`createdAt` is upload time)
+
+### Share Link
+- `file` (ObjectId -> files)
+- `token` (String, unique)
+- `createdBy` (ObjectId -> users)
+- `expiresAt` (Date)
+- `revokedAt` (Date, nullable)
+- timestamps
 
 ### Audit Log
 - `actor` (ObjectId -> users)
@@ -133,10 +164,10 @@ Base URL: `http://localhost:8080/api/v1`
 ### Files
 
 1. `POST /files/upload`
-- Purpose: upload one file and save metadata
+- Purpose: upload one or many files and save metadata
 - Access: `user/admin`
 - Content-Type: `multipart/form-data`
-- Form key: `file`
+- Form key: `file` or `files` (multiple)
 
 2. `GET /files/my-files`
 - Purpose: list files uploaded by current user
@@ -192,8 +223,79 @@ Base URL: `http://localhost:8080/api/v1`
 - Access: owner or admin
 
 10. `DELETE /files/:id`
-- Purpose: delete file metadata + local file content
+- Purpose: soft delete (move file to trash)
 - Access: owner or admin
+
+11. `POST /files/:id/restore`
+- Purpose: restore file from trash
+- Access: owner or admin
+
+12. `DELETE /files/:id/permanent`
+- Purpose: permanently delete file metadata + storage content
+- Access: owner or admin
+
+13. `GET /files/trash/files`
+- Purpose: list deleted files in current user's trash
+- Access: `user/admin`
+
+14. `GET /files/trash/folders`
+- Purpose: list deleted folders in current user's trash
+- Access: `user/admin`
+
+15. `POST /files/folders/restore`
+- Purpose: restore deleted folder (and folder contents)
+- Access: `user/admin`
+
+16. `DELETE /files/folders/permanent`
+- Purpose: permanently delete folder and all files/subfolders in it from trash
+- Access: `user/admin`
+- Body:
+```json
+{
+  "path": "semester8/project"
+}
+```
+
+17. `GET /files/folders/tree`
+- Purpose: get folder tree for current user (API ready, optional in UI)
+- Access: `user/admin`
+
+18. `PATCH /files/folders/move`
+- Purpose: move/rename folder path and update all child folders/files
+- Access: `user/admin`
+- Body:
+```json
+{
+  "fromPath": "semester8/project",
+  "toPath": "semester8/final-project"
+}
+```
+
+19. `POST /files/:id/share`
+- Purpose: create public share link for file
+- Access: owner or admin
+- Body:
+```json
+{
+  "expiresInHours": 24
+}
+```
+
+20. `GET /files/:id/shares`
+- Purpose: list share links of file
+- Access: owner or admin
+
+21. `DELETE /files/shares/:shareId`
+- Purpose: revoke share link
+- Access: owner or admin
+
+22. `GET /files/shared/:token/download`
+- Purpose: public shared download
+- Access: public (valid token)
+
+23. `GET /files/shared/:token/preview`
+- Purpose: public shared preview
+- Access: public (valid token)
 
 ### Admin
 
@@ -250,6 +352,15 @@ PORT=8080
 DEV_MODE=development
 MONGO_URL=mongodb://127.0.0.1:27017/nodejs-secure-rest-api
 JWT_SECRET=change_me_please
+TRUST_PROXY=false
+CORS_ORIGIN=*
+AUTH_RATE_LIMIT_WINDOW_MS=600000
+AUTH_RATE_LIMIT_MAX=20
+STORAGE_DRIVER=local
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
 MAX_USER_STORAGE_MB=200
 SEED_ADMIN_ON_START=false
 ADMIN_NAME=System Admin
@@ -275,6 +386,8 @@ npm run server
 - If account role is admin (`role=1` in MongoDB), use:
   - `Admin: All Files`
   - `Admin: Users`
+- Health check:
+  - `GET http://localhost:8080/healthz`
 
 5. Optional: auto seed admin on startup
 - Set in `.env`:
@@ -291,8 +404,12 @@ ADMIN_ADDRESS=HCMC
 ## 6. Frontend Demo Features
 - Auth screen (register/login)
 - My Drive dashboard with file cards
+- Multi-file upload (select many files or drag/drop)
+- Upload progress bar
 - Preview modal for image/video/audio/pdf/txt
 - Metadata actions: star, rename, move folder
+- Trash bin with restore/permanent delete
+- File sharing link (copy link)
 - Admin panel: list users and change roles
 - Admin panel: browse all files system-wide
 - Admin panel: browse folders system-wide and force-delete
@@ -300,15 +417,22 @@ ADMIN_ADDRESS=HCMC
 
 ## 7. Cloud-Ready Design (Next Step)
 
-Current implementation uses `localStorageService`.
+Current implementation uses `STORAGE_DRIVER=local` (via `services/storage/index.js`).
 To migrate to AWS S3 later:
 
-1. Add `s3StorageService` implementing same method signatures:
+1. Implement `s3StorageService` with real AWS SDK calls (stub already exists):
 - `saveBuffer(file, userId)`
 - `deleteFile(storagePath)`
-- `getAbsolutePath(storagePath)` (or return signed URL equivalent)
+- `getAbsolutePath(storagePath)` (or refactor to signed URL flow)
 
-2. Replace service usage in `fileController` from local to S3 service.
+2. Set `.env`:
+```env
+STORAGE_DRIVER=s3
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=your-bucket
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+```
 
-This keeps APIs, DB schema, and RBAC unchanged while changing only storage implementation.
+This keeps APIs, DB schema, and RBAC mostly unchanged while swapping storage backend.
 

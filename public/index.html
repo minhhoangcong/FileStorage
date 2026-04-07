@@ -47,6 +47,7 @@
           <nav>
             <button class="nav-btn active" data-view="my">My Drive</button>
             <button class="nav-btn" data-view="starred">Starred</button>
+            <button class="nav-btn" data-view="trash">Trash</button>
             <button class="nav-btn hidden" data-view="adminFiles" id="adminFilesNav">
               Admin: All Files
             </button>
@@ -111,18 +112,28 @@
           </section>
 
           <section class="upload-box">
-            <input type="file" id="fileInput" />
+            <input type="file" id="fileInput" multiple />
             <select id="folderSelect">
               <option value="root">root</option>
             </select>
             <input type="text" id="tagsInput" placeholder="Tags (comma separated)" />
             <button id="uploadBtn">Upload</button>
           </section>
+          <section class="upload-progress-wrap">
+            <div id="dropzone" class="dropzone">Drag and drop files here</div>
+            <div class="progress">
+              <div id="uploadProgressBar" class="progress-bar"></div>
+            </div>
+            <p id="uploadProgressText">No upload in progress</p>
+          </section>
 
           <section class="folder-box">
             <input type="text" id="newFolderInput" placeholder="Create new folder (e.g. semester8/project)" />
             <button id="createFolderBtn" class="ghost">Create Folder</button>
-            <div id="folderChips" class="folder-chips"></div>
+            <div class="folder-filter-wrap">
+              <button id="folderFilterBtn" class="ghost" type="button">Folders: All</button>
+              <div id="folderFilterMenu" class="folder-filter-menu hidden"></div>
+            </div>
           </section>
 
           <section id="filesSection">
@@ -194,6 +205,26 @@
               </table>
             </div>
           </section>
+
+          <section id="trashSection" class="hidden">
+            <div class="admin-head">
+              <h4>Trash Bin</h4>
+              <button id="reloadTrashBtn" class="ghost">Reload trash</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Name/Path</th>
+                    <th>Deleted At</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="trashTableBody"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
       </section>
     </main>
@@ -206,7 +237,15 @@
       <div id="previewBody"></div>
     </dialog>
 
+    <dialog id="moveModal">
+      <div class="preview-head">
+        <h4 id="moveTitle">Move file</h4>
+        <button id="closeMoveBtn" class="ghost">Close</button>
+      </div>
+      <div id="moveFolderList" class="move-folder-list"></div>
+    </dialog>
+
     <div class="toast hidden" id="toast"></div>
-    <script type="module" src="/app.js?v=20260404-5"></script>
+    <script type="module" src="/app.js?v=20260404-8"></script>
   </body>
 </html>

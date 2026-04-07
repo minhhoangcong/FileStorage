@@ -10,6 +10,14 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 class LocalStorageService extends StorageService {
+  getDriverName() {
+    return "local";
+  }
+
+  isLocal() {
+    return true;
+  }
+
   async saveBuffer(file, userId) {
     const ext = path.extname(file.originalname || "");
     const storedFilename = `${Date.now()}-${userId}-${randomUUID()}${ext}`;

@@ -11,14 +11,20 @@ const adminLogsTableBody = document.getElementById("adminLogsTableBody");
 const adminUsersSection = document.getElementById("adminUsersSection");
 const adminFoldersSection = document.getElementById("adminFoldersSection");
 const adminLogsSection = document.getElementById("adminLogsSection");
+const trashSection = document.getElementById("trashSection");
+const trashTableBody = document.getElementById("trashTableBody");
 const filesSection = document.getElementById("filesSection");
 const topbarSection = document.querySelector(".topbar");
 const statGridSection = document.querySelector(".stat-grid");
 const uploadBoxSection = document.querySelector(".upload-box");
+const uploadProgressWrap = document.querySelector(".upload-progress-wrap");
 const folderBoxSection = document.querySelector(".folder-box");
 const previewModal = document.getElementById("previewModal");
 const previewBody = document.getElementById("previewBody");
 const previewTitle = document.getElementById("previewTitle");
+const moveModal = document.getElementById("moveModal");
+const moveTitle = document.getElementById("moveTitle");
+const moveFolderList = document.getElementById("moveFolderList");
 const viewTitle = document.getElementById("viewTitle");
 const viewSubtitle = document.getElementById("viewSubtitle");
 
@@ -29,10 +35,14 @@ const fileInput = document.getElementById("fileInput");
 const folderSelect = document.getElementById("folderSelect");
 const tagsInput = document.getElementById("tagsInput");
 const newFolderInput = document.getElementById("newFolderInput");
-const folderChips = document.getElementById("folderChips");
+const folderFilterBtn = document.getElementById("folderFilterBtn");
+const folderFilterMenu = document.getElementById("folderFilterMenu");
 const pageInfo = document.getElementById("pageInfo");
 const prevPageBtn = document.getElementById("prevPageBtn");
 const nextPageBtn = document.getElementById("nextPageBtn");
+const dropzone = document.getElementById("dropzone");
+const uploadProgressBar = document.getElementById("uploadProgressBar");
+const uploadProgressText = document.getElementById("uploadProgressText");
 
 const totalFilesValue = document.getElementById("totalFilesValue");
 const usedStorageValue = document.getElementById("usedStorageValue");
@@ -52,10 +62,18 @@ let searchDebounce = null;
 let activePreviewObjectUrl = null;
 let allFolders = ["root"];
 let selectedFolderFilter = "";
+let pendingDroppedFiles = [];
+let moveTargetFile = null;
 
 const formatSizeMb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 const formatSizeKb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 const formatTime = (value) => new Date(value).toLocaleString();
+const isPreviewableMime = (mimeType = "") =>
+  mimeType.startsWith("image/") ||
+  mimeType.startsWith("video/") ||
+  mimeType.startsWith("audio/") ||
+  mimeType === "application/pdf" ||
+  mimeType === "text/plain";
 
 function showToast(message, timeout = 2200) {
   toast.textContent = message;
@@ -74,6 +92,36 @@ async function api(path, options = {}) {
     throw new Error(data?.message || "Request failed");
   }
   return data;
+}
+
+async function uploadWithProgress(formData) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/v1/files/upload");
+    xhr.setRequestHeader("Authorization", `Bearer ${authToken}`);
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.round((event.loaded / event.total) * 100);
+      uploadProgressBar.style.width = `${percent}%`;
+      uploadProgressText.textContent = `Uploading... ${percent}%`;
+    };
+
+    xhr.onload = () => {
+      const contentType = xhr.getResponseHeader("content-type") || "";
+      const data = contentType.includes("application/json")
+        ? JSON.parse(xhr.responseText || "{}")
+        : {};
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data);
+      } else {
+        reject(new Error(data?.message || "Upload failed"));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.send(formData);
+  });
 }
 
 function setAuthUI(loggedIn) {
@@ -99,16 +147,19 @@ function setView(view) {
   const isUserPanel = view === "adminUsers";
   const isFolderPanel = view === "adminFolders";
   const isLogsPanel = view === "adminLogs";
-  const isFilePanel = !isUserPanel && !isFolderPanel && !isLogsPanel;
+  const isTrashPanel = view === "trash";
+  const isFilePanel = !isUserPanel && !isFolderPanel && !isLogsPanel && !isTrashPanel;
 
   adminUsersSection.classList.toggle("hidden", !isUserPanel);
   adminFoldersSection.classList.toggle("hidden", !isFolderPanel);
   adminLogsSection.classList.toggle("hidden", !isLogsPanel);
+  trashSection.classList.toggle("hidden", !isTrashPanel);
   filesSection.classList.toggle("hidden", !isFilePanel);
 
   topbarSection.classList.toggle("hidden", !isFilePanel);
   statGridSection.classList.toggle("hidden", !isFilePanel);
   uploadBoxSection.classList.toggle("hidden", !isFilePanel);
+  uploadProgressWrap.classList.toggle("hidden", !isFilePanel);
   folderBoxSection.classList.toggle("hidden", !isFilePanel);
 
   if (view === "my") {
@@ -118,6 +169,10 @@ function setView(view) {
   if (view === "starred") {
     viewTitle.textContent = "Starred";
     viewSubtitle.textContent = "Quick access files";
+  }
+  if (view === "trash") {
+    viewTitle.textContent = "Trash Bin";
+    viewSubtitle.textContent = "Restore or permanently delete files/folders";
   }
   if (view === "adminFiles") {
     viewTitle.textContent = "Admin File Explorer";
@@ -228,6 +283,29 @@ async function downloadFile(file) {
   }
 }
 
+async function createShareLink(file) {
+  try {
+    const expiresInHoursInput = prompt("Expire after hours (1-720)", "24");
+    if (expiresInHoursInput === null) return;
+    const expiresInHours = Math.max(1, Math.min(720, Number(expiresInHoursInput) || 24));
+    const data = await api(`/api/v1/files/${file._id}/share`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresInHours }),
+    });
+    const previewable = isPreviewableMime(file.mimeType);
+    const link = previewable ? data.share?.previewUrl : data.share?.downloadUrl;
+    if (link) {
+      await navigator.clipboard.writeText(link);
+      window.open(link, "_blank", "noopener");
+      showToast(previewable ? "Preview link copied and opened" : "Download link copied");
+    }
+    await loadFiles();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
 async function updateMeta(fileId, payload, successMessage) {
   try {
     await api(`/api/v1/files/${fileId}/meta`, {
@@ -236,17 +314,49 @@ async function updateMeta(fileId, payload, successMessage) {
       body: JSON.stringify(payload),
     });
     if (successMessage) showToast(successMessage);
+    if (payload.folder !== undefined) {
+      await loadFolders();
+    }
     await loadFiles();
+    return true;
   } catch (error) {
     showToast(error.message);
+    return false;
   }
 }
 
+function renderMoveFolderList(file) {
+  moveFolderList.innerHTML = "";
+  const folderNames = [...new Set(allFolders)];
+  folderNames.forEach((folder) => {
+    const btn = document.createElement("button");
+    btn.className = `move-folder-item ${file.folder === folder ? "active" : ""}`.trim();
+    btn.type = "button";
+    btn.textContent = folder;
+    btn.addEventListener("click", async () => {
+      const ok = await updateMeta(file._id, { folder }, "Folder updated");
+      if (ok) {
+        moveModal.close();
+        moveTargetFile = null;
+      }
+    });
+    moveFolderList.appendChild(btn);
+  });
+}
+
+async function openMoveModal(file) {
+  moveTargetFile = file;
+  await loadFolders();
+  moveTitle.textContent = `Move: ${file.originalFilename}`;
+  renderMoveFolderList(file);
+  moveModal.showModal();
+}
+
 async function deleteFile(fileId) {
-  if (!window.confirm("Delete this file permanently?")) return;
+  if (!window.confirm("Move this file to trash?")) return;
   try {
     await api(`/api/v1/files/${fileId}`, { method: "DELETE" });
-    showToast("File deleted");
+    showToast("File moved to trash");
     await loadFiles();
   } catch (error) {
     showToast(error.message);
@@ -280,6 +390,7 @@ function renderFiles(files = []) {
 
     actions.appendChild(createActionButton("Preview", "ghost", () => openPreview(file)));
     actions.appendChild(createActionButton("Download", "ghost", () => downloadFile(file)));
+    actions.appendChild(createActionButton("Share", "ghost", () => createShareLink(file)));
     actions.appendChild(
       createActionButton(file.isStarred ? "Unstar" : "Star", "ghost", () =>
         updateMeta(file._id, { isStarred: !file.isStarred }, "Star status updated")
@@ -294,9 +405,7 @@ function renderFiles(files = []) {
     );
     actions.appendChild(
       createActionButton("Move", "ghost", () => {
-        const folder = prompt("Folder name", file.folder || "root");
-        if (folder === null) return;
-        updateMeta(file._id, { folder }, "Folder updated");
+        openMoveModal(file);
       })
     );
     actions.appendChild(
@@ -328,6 +437,44 @@ async function loadMyStats() {
   }
 }
 
+async function deleteFolderByPath(folder) {
+  const ok = confirm(`Delete folder "${folder}"?`);
+  if (!ok) return;
+  try {
+    await api("/api/v1/files/folders", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: folder }),
+    });
+    if (selectedFolderFilter === folder) selectedFolderFilter = "";
+    showToast("Folder deleted");
+    await loadFolders();
+    await loadFiles();
+  } catch (error) {
+    if (error.message.toLowerCase().includes("not empty")) {
+      const forceOk = confirm(
+        `Folder "${folder}" is not empty. Delete all files/subfolders inside it?`
+      );
+      if (!forceOk) return;
+      try {
+        await api("/api/v1/files/folders", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: folder, force: true }),
+        });
+        if (selectedFolderFilter === folder) selectedFolderFilter = "";
+        showToast("Folder and contents deleted");
+        await loadFolders();
+        await loadFiles();
+      } catch (forceError) {
+        showToast(forceError.message);
+      }
+    } else {
+      showToast(error.message);
+    }
+  }
+}
+
 function renderFolders() {
   folderSelect.innerHTML = "";
   allFolders.forEach((folder) => {
@@ -337,80 +484,47 @@ function renderFolders() {
     folderSelect.appendChild(opt);
   });
 
-  folderChips.innerHTML = "";
-  const allBtn = document.createElement("button");
-  allBtn.className = `chip-btn ${selectedFolderFilter === "" ? "active" : ""}`;
-  allBtn.textContent = "All";
-  allBtn.addEventListener("click", async () => {
-    selectedFolderFilter = "";
-    await loadFiles();
-  });
-  folderChips.appendChild(allBtn);
+  folderFilterBtn.textContent = selectedFolderFilter
+    ? `Folders: ${selectedFolderFilter}`
+    : "Folders: All";
 
-  allFolders.forEach((folder) => {
-    const wrap = document.createElement("div");
-    wrap.className = "folder-chip-wrap";
+  folderFilterMenu.innerHTML = "";
 
-    const btn = document.createElement("button");
-    btn.className = `chip-btn ${selectedFolderFilter === folder ? "active" : ""}`;
-    btn.textContent = folder;
-    btn.addEventListener("click", async () => {
-      selectedFolderFilter = folder === "root" ? "root" : folder;
+  const buildRow = (folder, isAll = false) => {
+    const row = document.createElement("div");
+    row.className = "folder-filter-item";
+
+    const selectBtn = document.createElement("button");
+    selectBtn.className = `folder-filter-select ${isAll ? (!selectedFolderFilter ? "active" : "") : (selectedFolderFilter === folder ? "active" : "")}`;
+    selectBtn.type = "button";
+    selectBtn.textContent = isAll ? "All folders" : folder;
+    selectBtn.addEventListener("click", async () => {
+      selectedFolderFilter = isAll ? "" : folder;
+      folderFilterMenu.classList.add("hidden");
+      renderFolders();
       await loadFiles();
     });
-    wrap.appendChild(btn);
+    row.appendChild(selectBtn);
 
-    if (folder !== "root") {
-      const del = document.createElement("button");
-      del.className = "chip-del-btn";
-      del.textContent = "x";
-      del.title = `Delete folder ${folder}`;
-      del.addEventListener("click", async (event) => {
+    if (!isAll && folder !== "root") {
+      const delBtn = document.createElement("button");
+      delBtn.className = "folder-filter-delete";
+      delBtn.type = "button";
+      delBtn.textContent = "x";
+      delBtn.title = `Delete folder ${folder}`;
+      delBtn.addEventListener("click", async (event) => {
         event.stopPropagation();
-        const ok = confirm(`Delete folder "${folder}"?`);
-        if (!ok) return;
-        try {
-          await api("/api/v1/files/folders", {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ path: folder }),
-          });
-          if (selectedFolderFilter === folder) {
-            selectedFolderFilter = "";
-          }
-          showToast("Folder deleted");
-          await loadFolders();
-          await loadFiles();
-        } catch (error) {
-          if (error.message.toLowerCase().includes("not empty")) {
-            const forceOk = confirm(
-              `Folder "${folder}" is not empty. Delete all files/subfolders inside it?`
-            );
-            if (!forceOk) return;
-            try {
-              await api("/api/v1/files/folders", {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ path: folder, force: true }),
-              });
-              if (selectedFolderFilter === folder) {
-                selectedFolderFilter = "";
-              }
-              showToast("Folder and contents deleted");
-              await loadFolders();
-              await loadFiles();
-            } catch (forceError) {
-              showToast(forceError.message);
-            }
-          } else {
-            showToast(error.message);
-          }
-        }
+        await deleteFolderByPath(folder);
       });
-      wrap.appendChild(del);
+      row.appendChild(delBtn);
     }
 
-    folderChips.appendChild(wrap);
+    return row;
+  };
+
+  folderFilterMenu.appendChild(buildRow("", true));
+  allFolders.forEach((folder) => {
+    folderFilterMenu.appendChild(buildRow(folder, false));
   });
 }
 
@@ -426,7 +540,7 @@ async function loadFolders() {
 }
 
 async function loadFiles() {
-  if (currentView === "adminUsers") return;
+  if (["adminUsers", "adminFolders", "adminLogs", "trash"].includes(currentView)) return;
   try {
     const query = getActiveQuery();
     const endpoint =
@@ -563,6 +677,115 @@ async function loadAuditLogs() {
   }
 }
 
+async function loadTrash() {
+  try {
+    const [filesData, foldersData] = await Promise.all([
+      api("/api/v1/files/trash/files"),
+      api("/api/v1/files/trash/folders"),
+    ]);
+
+    const rows = [];
+    (filesData.files || []).forEach((file) => {
+      rows.push({
+        type: "File",
+        label: file.originalFilename,
+        deletedAt: file.deletedAt,
+        actions: [
+          {
+            label: "Restore",
+            className: "ghost",
+            handler: async () => {
+              await api(`/api/v1/files/${file._id}/restore`, { method: "POST" });
+              showToast("File restored");
+              await loadTrash();
+              await loadFiles();
+            },
+          },
+          {
+            label: "Delete Forever",
+            className: "danger",
+            handler: async () => {
+              const ok = confirm(`Permanently delete file "${file.originalFilename}"?`);
+              if (!ok) return;
+              await api(`/api/v1/files/${file._id}/permanent`, { method: "DELETE" });
+              showToast("File permanently deleted");
+              await loadTrash();
+              await loadFiles();
+            },
+          },
+        ],
+      });
+    });
+
+    (foldersData.folders || []).forEach((folder) => {
+      rows.push({
+        type: "Folder",
+        label: folder.path,
+        deletedAt: folder.deletedAt || folder.createdAt,
+        actions: [
+          {
+            label: "Restore",
+            className: "ghost",
+            handler: async () => {
+              await api("/api/v1/files/folders/restore", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: folder.path }),
+              });
+              showToast("Folder restored");
+              await loadTrash();
+              await loadFolders();
+              await loadFiles();
+            },
+          },
+          {
+            label: "Delete Forever",
+            className: "danger",
+            handler: async () => {
+              const ok = confirm(`Permanently delete folder "${folder.path}" and all contents?`);
+              if (!ok) return;
+              await api("/api/v1/files/folders/permanent", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: folder.path }),
+              });
+              showToast("Folder permanently deleted");
+              await loadTrash();
+              await loadFolders();
+              await loadFiles();
+            },
+          },
+        ],
+      });
+    });
+
+    rows.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+    trashTableBody.innerHTML = "";
+    if (!rows.length) {
+      trashTableBody.innerHTML = '<tr><td colspan="4">Trash is empty</td></tr>';
+      return;
+    }
+
+    rows.forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${row.type}</td>
+        <td>${row.label}</td>
+        <td>${formatTime(row.deletedAt)}</td>
+        <td></td>
+      `;
+      const actionTd = tr.querySelector("td:last-child");
+      (row.actions || []).forEach((action) => {
+        const btn = createActionButton(action.label, action.className || "ghost", action.handler);
+        actionTd.appendChild(btn);
+      });
+      trashTableBody.appendChild(tr);
+    });
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
 async function loadSession() {
   if (!authToken) {
     setAuthUI(false);
@@ -600,6 +823,7 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
     if (btn.dataset.view === "adminUsers") await loadUsers();
     else if (btn.dataset.view === "adminFolders") await loadAdminFolders();
     else if (btn.dataset.view === "adminLogs") await loadAuditLogs();
+    else if (btn.dataset.view === "trash") await loadTrash();
     else await loadFiles();
   });
 });
@@ -641,24 +865,30 @@ loginForm.addEventListener("submit", async (event) => {
 });
 
 document.getElementById("uploadBtn").addEventListener("click", async () => {
-  const file = fileInput.files?.[0];
-  if (!file) {
-    showToast("Choose file first");
+  const pickedFiles = [...(fileInput.files || []), ...pendingDroppedFiles];
+  if (!pickedFiles.length) {
+    showToast("Choose file(s) first");
     return;
   }
   const form = new FormData();
-  form.append("file", file);
+  pickedFiles.forEach((file) => form.append("files", file));
   form.append("folder", folderSelect.value || "root");
   form.append("tags", tagsInput.value.trim());
 
   try {
-    await api("/api/v1/files/upload", { method: "POST", body: form });
+    uploadProgressBar.style.width = "0%";
+    uploadProgressText.textContent = "Starting upload...";
+    await uploadWithProgress(form);
     fileInput.value = "";
+    pendingDroppedFiles = [];
+    dropzone.textContent = "Drag and drop files here";
     tagsInput.value = "";
+    uploadProgressText.textContent = "Upload complete";
     showToast("Upload success");
     pageState.page = 1;
     await loadFiles();
   } catch (error) {
+    uploadProgressText.textContent = "Upload failed";
     showToast(error.message);
   }
 });
@@ -685,6 +915,9 @@ document.getElementById("createFolderBtn").addEventListener("click", async () =>
 
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   if (currentView === "adminUsers") await loadUsers();
+  else if (currentView === "adminFolders") await loadAdminFolders();
+  else if (currentView === "adminLogs") await loadAuditLogs();
+  else if (currentView === "trash") await loadTrash();
   else {
     await loadFolders();
     await loadFiles();
@@ -694,6 +927,16 @@ document.getElementById("refreshBtn").addEventListener("click", async () => {
 document.getElementById("reloadUsersBtn").addEventListener("click", loadUsers);
 document.getElementById("reloadFoldersBtn").addEventListener("click", loadAdminFolders);
 document.getElementById("reloadLogsBtn").addEventListener("click", loadAuditLogs);
+document.getElementById("reloadTrashBtn").addEventListener("click", loadTrash);
+folderFilterBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  folderFilterMenu.classList.toggle("hidden");
+});
+document.addEventListener("click", (event) => {
+  if (folderFilterMenu.classList.contains("hidden")) return;
+  if (folderFilterBtn.contains(event.target) || folderFilterMenu.contains(event.target)) return;
+  folderFilterMenu.classList.add("hidden");
+});
 
 document.getElementById("logoutBtn").addEventListener("click", () => {
   authToken = "";
@@ -703,6 +946,14 @@ document.getElementById("logoutBtn").addEventListener("click", () => {
   usersTableBody.innerHTML = "";
   adminFoldersTableBody.innerHTML = "";
   adminLogsTableBody.innerHTML = "";
+  trashTableBody.innerHTML = "";
+  pendingDroppedFiles = [];
+  dropzone.textContent = "Drag and drop files here";
+  folderFilterMenu.classList.add("hidden");
+  if (moveModal.open) moveModal.close();
+  moveTargetFile = null;
+  uploadProgressBar.style.width = "0%";
+  uploadProgressText.textContent = "No upload in progress";
   setAuthUI(false);
 });
 
@@ -713,6 +964,11 @@ document.getElementById("closePreviewBtn").addEventListener("click", () => {
     activePreviewObjectUrl = null;
   }
   previewModal.close();
+});
+
+document.getElementById("closeMoveBtn").addEventListener("click", () => {
+  moveModal.close();
+  moveTargetFile = null;
 });
 
 searchInput.addEventListener("input", () => {
@@ -731,6 +987,31 @@ typeFilter.addEventListener("change", () => {
 sortFilter.addEventListener("change", () => {
   pageState.page = 1;
   loadFiles();
+});
+
+fileInput.addEventListener("change", () => {
+  const count = (fileInput.files || []).length;
+  if (count) {
+    dropzone.textContent = `Selected ${count} file(s)`;
+  }
+});
+
+dropzone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  dropzone.classList.add("drag-over");
+});
+
+dropzone.addEventListener("dragleave", () => {
+  dropzone.classList.remove("drag-over");
+});
+
+dropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dropzone.classList.remove("drag-over");
+  const files = [...(event.dataTransfer?.files || [])];
+  if (!files.length) return;
+  pendingDroppedFiles = files;
+  dropzone.textContent = `Dropped ${files.length} file(s)`;
 });
 
 prevPageBtn.addEventListener("click", async () => {

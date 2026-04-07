@@ -8,7 +8,7 @@ import {
   getAuditLogsController,
 } from "../controllers/adminController.js";
 import { requireSignIn, isAdmin } from "../middlewares/authMiddleware.js";
-import { deleteFolderController } from "../controllers/fileController.js";
+import { deleteFolderController } from "../controllers/fileControllerV2.js";
 
 const router = express.Router();
 

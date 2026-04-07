@@ -270,59 +270,128 @@ button:active {
 
 .folder-box {
   display: grid;
-  grid-template-columns: minmax(220px, 360px) auto 1fr;
+  grid-template-columns: minmax(220px, 360px) auto minmax(180px, 320px);
   gap: 8px;
   align-items: center;
 }
 
-.folder-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.upload-progress-wrap {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
 }
 
-.folder-chip-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.dropzone {
+  border: 1px dashed #95c8be;
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+  color: #326860;
+  background: #f3fffb;
 }
 
-.chip-btn {
-  border: 1px solid #bfe7dd;
+.dropzone.drag-over {
+  background: #daf7ef;
+  border-color: #4cb89c;
+}
+
+.progress {
+  margin-top: 8px;
+  width: 100%;
+  height: 10px;
   border-radius: 999px;
-  padding: 5px 10px;
-  background: #ebfbf6;
-  color: #0b6f5f;
-  cursor: pointer;
-  font: inherit;
+  background: #eaf1fb;
+  overflow: hidden;
+}
+
+.progress-bar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(120deg, #0a9b7d, #0b72a1);
+  transition: width 0.18s ease;
+}
+
+#uploadProgressText {
+  margin: 8px 0 0;
   font-size: 12px;
-  transition: all 0.18s ease;
+  color: var(--muted);
 }
 
-.chip-btn.active,
-.chip-btn:hover {
-  background: #d9f7ef;
-  border-color: #95decc;
+.folder-filter-wrap {
+  position: relative;
+  width: 100%;
 }
 
-.chip-del-btn {
+#folderFilterBtn {
+  width: 100%;
+  text-align: left;
+}
+
+.folder-filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 14px 24px rgba(20, 34, 67, 0.12);
+  padding: 6px;
+  z-index: 25;
+}
+
+.folder-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.folder-filter-item:last-child {
+  margin-bottom: 0;
+}
+
+.folder-filter-select {
+  flex: 1;
+  border: 1px solid #d8e3f6;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+
+.folder-filter-select:hover {
+  border-color: #9ec9bf;
+  background: #f3fffb;
+}
+
+.folder-filter-select.active {
+  border-color: #8adbc8;
+  background: #e9fff8;
+  color: #0a6a59;
+  font-weight: 700;
+}
+
+.folder-filter-delete {
   border: 1px solid #ffcaca;
-  border-radius: 999px;
-  padding: 3px 8px;
+  border-radius: 8px;
+  padding: 6px 8px;
   background: #fff1f1;
   color: #b83a3a;
-  cursor: pointer;
   font: inherit;
-  font-size: 11px;
-  transition: transform 0.15s ease, background 0.2s ease;
+  font-size: 12px;
+  cursor: pointer;
 }
 
-.chip-del-btn:hover {
+.folder-filter-delete:hover {
   background: #ffe3e3;
-}
-
-.chip-del-btn:active {
-  transform: scale(0.96);
 }
 
 .file-grid {
@@ -380,6 +449,16 @@ button:active {
   gap: 6px;
 }
 
+.share-link {
+  font-size: 11px;
+  color: #096c5c;
+  word-break: break-all;
+  background: #ebfcf7;
+  border: 1px solid #bfe8dd;
+  border-radius: 8px;
+  padding: 5px 7px;
+}
+
 .small {
   font-size: 12px;
   padding: 6px 9px;
@@ -423,6 +502,18 @@ button:active {
   overflow-x: auto;
 }
 
+#adminLogsSection .table-wrap {
+  height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+#adminLogsSection thead th {
+  position: sticky;
+  top: 0;
+  background: #f7fbff;
+  z-index: 2;
+}
+
 .admin-head {
   display: flex;
   align-items: center;
@@ -444,6 +535,12 @@ td {
   padding: 10px 8px;
   border-bottom: 1px solid var(--line);
   text-align: left;
+}
+
+#trashTableBody td:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 dialog {
@@ -475,6 +572,36 @@ dialog::backdrop {
   width: 100%;
   max-height: 70vh;
   border-radius: 10px;
+}
+
+.move-folder-list {
+  display: grid;
+  gap: 8px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.move-folder-item {
+  border: 1px solid #d8e3f6;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  padding: 9px 11px;
+  cursor: pointer;
+}
+
+.move-folder-item:hover {
+  border-color: #9ec9bf;
+  background: #f3fffb;
+}
+
+.move-folder-item.active {
+  border-color: #8adbc8;
+  background: #e9fff8;
+  color: #0a6a59;
+  font-weight: 700;
 }
 
 .toast {

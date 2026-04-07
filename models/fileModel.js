@@ -52,6 +52,20 @@ const fileSchema = new mongoose.Schema(
       enum: ["private", "public"],
       default: "private",
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "users",
+      default: null,
+    },
   },
   { timestamps: true }
 );

@@ -1,4 +1,12 @@
 export class StorageService {
+  getDriverName() {
+    return "unknown";
+  }
+
+  isLocal() {
+    return false;
+  }
+
   async saveBuffer(_file, _userId) {
     throw new Error("saveBuffer() must be implemented");
   }
