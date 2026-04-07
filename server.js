@@ -1,6 +1,6 @@
+import "dotenv/config";
 import express from "express";
 import "colors";
-import dotenv from "dotenv";
 import morgan from "morgan";
 import path from "path";
 import mongoose from "mongoose";
@@ -11,10 +11,6 @@ import { errorHandler } from "./middlewares/errorMiddleware.js";
 import { corsMiddleware, securityHeaders } from "./middlewares/securityHeadersMiddleware.js";
 import connectDB from "./config/db.js";
 import { seedAdminUser } from "./services/adminSeedService.js";
-
-
-// config dotenv
-dotenv.config();
 
 // REST object
 const app = express();

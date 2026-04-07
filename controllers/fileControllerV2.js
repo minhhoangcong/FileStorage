@@ -1,10 +1,10 @@
-import fs from "fs";
 import crypto from "crypto";
 import FileModel from "../models/fileModel.js";
 import userModel from "../models/userModel.js";
 import FolderModel from "../models/folderModel.js";
 import ShareLinkModel from "../models/shareLinkModel.js";
 import storageService from "../services/storage/index.js";
+import localStorageService from "../services/storage/localStorageService.js";
 import { createAuditLog } from "../services/auditLogService.js";
 
 const PREVIEWABLE_MIME_PREFIX = ["image/", "video/", "audio/"];
@@ -79,9 +79,90 @@ const isPreviewableMime = (mimeType) =>
   PREVIEWABLE_MIME_EXACT.includes(mimeType) ||
   PREVIEWABLE_MIME_PREFIX.some((prefix) => mimeType.startsWith(prefix));
 
-const requireLocalStorage = () => {
-  if (storageService.isLocal()) return null;
-  return `Current storage driver '${storageService.getDriverName()}' does not support local preview/download API yet`;
+const isStorageNotFoundError = (error) => {
+  if (!error) return false;
+  if (error.code === "NOT_FOUND") return true;
+  if (error.name === "NoSuchKey" || error.name === "NotFound") return true;
+  if (error.$metadata?.httpStatusCode === 404) return true;
+  return false;
+};
+
+const resolveReadCandidates = () => {
+  const candidates = [storageService];
+  if (storageService.getDriverName() === "s3") {
+    candidates.push(localStorageService);
+  }
+  return candidates;
+};
+
+const resolveDeleteCandidates = () => {
+  const candidates = [storageService];
+  if (storageService.getDriverName() === "s3") {
+    candidates.push(localStorageService);
+  }
+  return candidates;
+};
+
+const deleteFromStorageWithFallback = async (storagePath) => {
+  const candidates = resolveDeleteCandidates();
+  let lastResult = { deleted: false, reason: "not_found" };
+
+  for (const candidate of candidates) {
+    try {
+      const result = await candidate.deleteFile(storagePath);
+      lastResult = result || lastResult;
+      if (result?.deleted) return result;
+    } catch (_error) {
+      // try next fallback
+    }
+  }
+
+  return lastResult;
+};
+
+const sendStoredFile = async (res, file, { asAttachment = false } = {}) => {
+  let response = null;
+  const candidates = resolveReadCandidates();
+
+  for (const candidate of candidates) {
+    try {
+      response = await candidate.getFileStream(file.storagePath);
+      break;
+    } catch (error) {
+      if (isStorageNotFoundError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const stream = response?.stream;
+  if (!stream || typeof stream.pipe !== "function") {
+    const error = new Error("File content is missing on storage");
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const contentType = response?.contentType || file.mimeType || "application/octet-stream";
+  const encodedName = encodeURIComponent(file.originalFilename || "file");
+
+  res.setHeader("Content-Type", contentType);
+  res.setHeader(
+    "Content-Disposition",
+    `${asAttachment ? "attachment" : "inline"}; filename*=UTF-8''${encodedName}`
+  );
+  if (response?.contentLength) {
+    res.setHeader("Content-Length", String(response.contentLength));
+  }
+
+  stream.on("error", (_error) => {
+    if (!res.headersSent) {
+      res.status(500).send({ success: false, message: "Error while streaming file from storage" });
+    } else {
+      res.destroy();
+    }
+  });
+  return stream.pipe(res);
 };
 
 const buildFolderTree = (folders) => {
@@ -241,39 +322,31 @@ export const getTrashFilesController = async (req, res) => {
 
 export const downloadFileController = async (req, res) => {
   try {
-    const localStorageError = requireLocalStorage();
-    if (localStorageError) return res.status(501).send({ success: false, message: localStorageError });
     const result = await withFileById(req.params.id, req.user, false);
     if (result.error) return res.status(result.error.status).send({ success: false, message: result.error.message });
     const file = result.file;
-    const absolutePath = storageService.getAbsolutePath(file.storagePath);
-    if (!fs.existsSync(absolutePath)) {
+    return await sendStoredFile(res, file, { asAttachment: true });
+  } catch (error) {
+    if (isStorageNotFoundError(error)) {
       return res.status(404).send({ success: false, message: "File content is missing on storage" });
     }
-    return res.download(absolutePath, file.originalFilename);
-  } catch (error) {
     return res.status(500).send({ success: false, message: "Error while downloading file", error: error.message });
   }
 };
 
 export const previewFileController = async (req, res) => {
   try {
-    const localStorageError = requireLocalStorage();
-    if (localStorageError) return res.status(501).send({ success: false, message: localStorageError });
     const result = await withFileById(req.params.id, req.user, false);
     if (result.error) return res.status(result.error.status).send({ success: false, message: result.error.message });
     const file = result.file;
     if (!isPreviewableMime(file.mimeType)) {
       return res.status(400).send({ success: false, message: "This file type is not previewable in browser" });
     }
-    const absolutePath = storageService.getAbsolutePath(file.storagePath);
-    if (!fs.existsSync(absolutePath)) {
+    return await sendStoredFile(res, file, { asAttachment: false });
+  } catch (error) {
+    if (isStorageNotFoundError(error)) {
       return res.status(404).send({ success: false, message: "File content is missing on storage" });
     }
-    res.setHeader("Content-Type", file.mimeType);
-    res.setHeader("Content-Disposition", `inline; filename=\"${file.originalFilename}\"`);
-    return res.sendFile(absolutePath);
-  } catch (error) {
     return res.status(500).send({ success: false, message: "Error while previewing file", error: error.message });
   }
 };
@@ -349,7 +422,7 @@ export const permanentDeleteFileController = async (req, res) => {
     const result = await withFileById(req.params.id, req.user, true);
     if (result.error) return res.status(result.error.status).send({ success: false, message: result.error.message });
     const file = result.file;
-    const storageDeleteResult = await storageService.deleteFile(file.storagePath);
+    const storageDeleteResult = await deleteFromStorageWithFallback(file.storagePath);
     await ShareLinkModel.deleteMany({ file: file._id });
     await file.deleteOne();
 
@@ -625,7 +698,7 @@ export const permanentDeleteFolderController = async (req, res) => {
     let storageDeleteFailedCount = 0;
     for (const file of filesInFolder) {
       try {
-        const storageDeleteResult = await storageService.deleteFile(file.storagePath);
+        const storageDeleteResult = await deleteFromStorageWithFallback(file.storagePath);
         if (storageDeleteResult?.deleted) storageDeletedCount += 1;
         else storageDeleteFailedCount += 1;
       } catch (_error) {
@@ -821,35 +894,31 @@ const resolveActiveShareFile = async (token) => {
 
 export const sharedDownloadController = async (req, res) => {
   try {
-    const localStorageError = requireLocalStorage();
-    if (localStorageError) return res.status(501).send({ success: false, message: localStorageError });
     const resolved = await resolveActiveShareFile(req.params.token);
     if (resolved.error) return res.status(404).send({ success: false, message: resolved.error });
     const file = resolved.file;
-    const absolutePath = storageService.getAbsolutePath(file.storagePath);
-    if (!fs.existsSync(absolutePath)) return res.status(404).send({ success: false, message: "File content missing" });
-    return res.download(absolutePath, file.originalFilename);
+    return await sendStoredFile(res, file, { asAttachment: true });
   } catch (error) {
+    if (isStorageNotFoundError(error)) {
+      return res.status(404).send({ success: false, message: "File content missing" });
+    }
     return res.status(500).send({ success: false, message: "Error while downloading shared file", error: error.message });
   }
 };
 
 export const sharedPreviewController = async (req, res) => {
   try {
-    const localStorageError = requireLocalStorage();
-    if (localStorageError) return res.status(501).send({ success: false, message: localStorageError });
     const resolved = await resolveActiveShareFile(req.params.token);
     if (resolved.error) return res.status(404).send({ success: false, message: resolved.error });
     const file = resolved.file;
     if (!isPreviewableMime(file.mimeType)) {
       return res.status(400).send({ success: false, message: "This shared file type cannot be previewed" });
     }
-    const absolutePath = storageService.getAbsolutePath(file.storagePath);
-    if (!fs.existsSync(absolutePath)) return res.status(404).send({ success: false, message: "File content missing" });
-    res.setHeader("Content-Type", file.mimeType);
-    res.setHeader("Content-Disposition", `inline; filename=\"${file.originalFilename}\"`);
-    return res.sendFile(absolutePath);
+    return await sendStoredFile(res, file, { asAttachment: false });
   } catch (error) {
+    if (isStorageNotFoundError(error)) {
+      return res.status(404).send({ success: false, message: "File content missing" });
+    }
     return res.status(500).send({ success: false, message: "Error while previewing shared file", error: error.message });
   }
 };

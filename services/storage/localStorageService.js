@@ -59,6 +59,21 @@ class LocalStorageService extends StorageService {
     return { deleted: false, reason: "unknown" };
   }
 
+  async getFileStream(storagePath) {
+    const absolutePath = this.getAbsolutePath(storagePath);
+    if (!fs.existsSync(absolutePath)) {
+      const error = new Error("File not found on local storage");
+      error.code = "NOT_FOUND";
+      throw error;
+    }
+
+    const stat = await fs.promises.stat(absolutePath);
+    return {
+      stream: fs.createReadStream(absolutePath),
+      contentLength: stat.size,
+    };
+  }
+
   getAbsolutePath(storagePath) {
     return path.join(uploadsDir, storagePath);
   }

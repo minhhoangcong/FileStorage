@@ -428,6 +428,7 @@ To migrate to AWS S3 later:
 2. Set `.env`:
 ```env
 STORAGE_DRIVER=s3
+S3_USE_USER_PREFIX=false
 AWS_REGION=ap-southeast-1
 AWS_S3_BUCKET=your-bucket
 AWS_ACCESS_KEY_ID=...

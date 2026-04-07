@@ -15,6 +15,10 @@ export class StorageService {
     throw new Error("deleteFile() must be implemented");
   }
 
+  async getFileStream(_storagePath) {
+    throw new Error("getFileStream() must be implemented");
+  }
+
   getAbsolutePath(_storagePath) {
     throw new Error("getAbsolutePath() must be implemented");
   }
