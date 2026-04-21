@@ -84,6 +84,16 @@ body.auth-only .auth-card {
   margin-bottom: 12px;
 }
 
+.auth-error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #ffcaca;
+  border-radius: 10px;
+  background: #fff1f1;
+  color: #b83a3a;
+  font-size: 13px;
+}
+
 .auth-tab,
 .ghost,
 button {

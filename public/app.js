@@ -2,6 +2,7 @@ const authCard = document.getElementById("authCard");
 const appShell = document.getElementById("appShell");
 const loginForm = document.getElementById("loginForm");
 const registerForm = document.getElementById("registerForm");
+const authError = document.getElementById("authError");
 const userInfo = document.getElementById("userInfo");
 const toast = document.getElementById("toast");
 const fileGrid = document.getElementById("fileGrid");
@@ -81,15 +82,40 @@ function showToast(message, timeout = 2200) {
   setTimeout(() => toast.classList.add("hidden"), timeout);
 }
 
+function clearAuthError() {
+  if (!authError) return;
+  authError.textContent = "";
+  authError.classList.add("hidden");
+}
+
+function showAuthError(message) {
+  const text = message || "Authentication failed";
+  if (authError) {
+    authError.textContent = text;
+    authError.classList.remove("hidden");
+  }
+  showToast(text, 3200);
+}
+
 async function api(path, options = {}) {
   const headers = options.headers ? { ...options.headers } : {};
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   const res = await fetch(path, { ...options, headers });
   const contentType = res.headers.get("content-type") || "";
-  const data = contentType.includes("application/json") ? await res.json() : null;
+  let data = null;
+  let textBody = "";
+
+  if (contentType.includes("application/json")) {
+    data = await res.json();
+  } else {
+    textBody = await res.text();
+  }
 
   if (!res.ok) {
-    throw new Error(data?.message || "Request failed");
+    const error = new Error(data?.message || textBody || `Request failed (${res.status})`);
+    error.status = res.status;
+    error.data = data;
+    throw error;
   }
   return data;
 }
@@ -131,6 +157,7 @@ function setAuthUI(loggedIn) {
 }
 
 function switchAuthTab(tabName) {
+  clearAuthError();
   document.querySelectorAll(".auth-tab").forEach((el) => {
     el.classList.toggle("active", el.dataset.tab === tabName);
   });
@@ -830,6 +857,7 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
 
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearAuthError();
   const payload = Object.fromEntries(new FormData(registerForm).entries());
   try {
     await api("/api/v1/auth/register", {
@@ -841,12 +869,24 @@ registerForm.addEventListener("submit", async (event) => {
     registerForm.reset();
     switchAuthTab("login");
   } catch (error) {
-    showToast(error.message);
+    const duplicateField = error?.data?.field;
+    if (duplicateField === "email") {
+      showAuthError("Email này đã được dùng. Hãy dùng email khác hoặc đăng nhập.");
+      registerForm.elements.email?.focus();
+      return;
+    }
+    if (duplicateField === "phone") {
+      showAuthError("Số điện thoại này đã được dùng. Hãy dùng số khác.");
+      registerForm.elements.phone?.focus();
+      return;
+    }
+    showAuthError(error.message);
   }
 });
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearAuthError();
   const payload = Object.fromEntries(new FormData(loginForm).entries());
   try {
     const data = await api("/api/v1/auth/login", {
@@ -860,8 +900,15 @@ loginForm.addEventListener("submit", async (event) => {
     loginForm.reset();
     showToast("Login successful");
   } catch (error) {
-    showToast(error.message);
+    showAuthError(error.message);
   }
+});
+
+loginForm.querySelectorAll("input").forEach((input) => {
+  input.addEventListener("input", clearAuthError);
+});
+registerForm.querySelectorAll("input").forEach((input) => {
+  input.addEventListener("input", clearAuthError);
 });
 
 document.getElementById("uploadBtn").addEventListener("click", async () => {
