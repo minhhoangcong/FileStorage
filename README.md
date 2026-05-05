@@ -1,37 +1,158 @@
-# Cloud-based File Storage and Management System (Backend)
+# Nimbus Drive - Cloud-based File Storage and Management System
 
-Refactor + extend from original `nodejs-secure-rest-api` codebase.
+Nimbus Drive is a cloud-based file storage and management system built from a Node.js/Express REST API. The project supports user authentication, role-based authorization, file upload and management, admin management, and cloud deployment using AWS services.
 
-Current phase focuses on stable local backend with:
-- auth (register/login/JWT)
-- role-based access (user/admin)
-- file upload + metadata
-- file list/download/delete with ownership check
-- file preview (image/video/audio/pdf/txt)
-- file metadata edit (rename/folder/tags/star)
-- create and manage folders (logical folders)
-- search, filter, sort, pagination
-- quota per user (`MAX_USER_STORAGE_MB`)
-- trash bin (soft delete + restore + permanent delete)
-- share links (public download/preview with expiry)
-- multi-file upload + drag/drop + upload progress (frontend)
-- admin view all files + admin stats + user role management
-- admin folder management + audit logs
-- basic security hardening (security headers, CORS policy, auth rate-limit)
-- health check endpoint (`GET /healthz`)
-- built-in frontend demo page (no Postman required)
+This project was developed for a Cloud Computing final project. The main goal is to demonstrate a practical cloud architecture where compute, storage, database, monitoring, CDN, and access control are separated into different cloud services.
 
-Later phase can switch storage from local disk to AWS S3 without rewriting business logic.
+## 1. Project Overview
 
-## 1. Tech Stack
+Nimbus Drive allows users to:
 
-- Node.js + Express
-- MongoDB + Mongoose
-- JWT authentication
-- Multer (upload middleware)
-- MVC-style folder organization
+- Register and login with JWT authentication.
+- Upload files through a web interface.
+- Preview, download, rename, move, star, delete, restore, and permanently delete files.
+- Organize files by logical folders and tags.
+- Search, filter, sort, and paginate files.
+- Create public share links for files.
+- Use a trash bin before permanent deletion.
 
-## 2. Project Structure
+Admins can:
+
+- View all files across all users.
+- Manage users and user roles.
+- View system-wide folders.
+- View audit logs for important actions.
+- Monitor system-level file usage and storage statistics.
+
+## 2. Current Cloud Architecture
+
+The deployed system uses the following architecture:
+
+```txt
+User Browser
+  -> Domain + HTTPS: https://nimbusdrive.io.vn
+  -> Application Load Balancer
+  -> EC2 instances running Node.js/Express with PM2
+  -> MongoDB Atlas for users and file metadata
+  -> Amazon S3 for actual uploaded files
+  -> AWS Lambda triggered by S3 upload events
+  -> Amazon CloudWatch for Lambda logs and basic monitoring
+  -> Amazon CloudFront for CDN-based file delivery support
+  -> IAM for AWS access control
+```
+
+Main deployed components:
+
+- Domain: `https://nimbusdrive.io.vn`
+- S3 bucket: `file-storage-project-nhom5`
+- Application Load Balancer: `nimbus-drive-alb`
+- Target Group: `nimbus-drive-tg`
+- Auto Scaling Group: `nimbus-drive-asg`
+- Lambda function: `nimbus-drive-s3-upload-logger`
+- Database: MongoDB Atlas
+
+## 3. AWS Services Used
+
+| Service | Purpose |
+| --- | --- |
+| Amazon EC2 | Runs the Node.js/Express backend application. |
+| Application Load Balancer | Distributes HTTP/HTTPS requests to multiple EC2 instances. |
+| Auto Scaling Group | Maintains and scales the number of EC2 instances. |
+| Amazon S3 | Stores the actual uploaded files. |
+| AWS Lambda | Handles S3 upload events and writes upload logs. |
+| Amazon CloudWatch | Stores Lambda logs and provides monitoring metrics. |
+| Amazon CloudFront | Provides CDN support for file delivery from S3. |
+| IAM | Controls permissions for app access to AWS services. |
+| Nginx | Reverse proxy for the Node.js app and HTTPS configuration. |
+| Let's Encrypt | Provides HTTPS certificate for the domain. |
+
+MongoDB Atlas is used as the cloud database for application data. It stores users, file metadata, folders, share links, and audit logs. The actual file content is not stored in MongoDB; it is stored in S3.
+
+## 4. Key Features
+
+### Authentication and Authorization
+
+- User registration.
+- User login.
+- JWT-based authentication.
+- User role and admin role.
+- Protected API routes.
+- Admin-only routes.
+- Login/register error messages shown on the frontend.
+
+### File Management
+
+- Upload files to storage.
+- Store file metadata in MongoDB.
+- Preview supported file types in the browser.
+- Download files.
+- Rename files.
+- Move files between folders.
+- Star/unstar files.
+- Tag files.
+- Search files by name or tag.
+- Filter files by type.
+- Sort files by newest or other supported criteria.
+- Paginate file lists.
+- Soft delete files to trash.
+- Restore files from trash.
+- Permanently delete files.
+
+### Folder Management
+
+- Create logical folders.
+- Upload files into selected folders.
+- Move files to existing folders.
+- Delete empty folders.
+- Force delete folders when required.
+- Restore deleted folders from trash.
+- Admin can view and manage folders across users.
+
+### Sharing
+
+- Create file share links.
+- Public preview or download through share token.
+- Revoke share links.
+- Share links can expire.
+
+### Admin Dashboard
+
+- View all files in the system.
+- Upload files as admin.
+- Preview and download user files.
+- Manage users.
+- Promote or demote roles with safeguards.
+- View all folders.
+- View audit logs.
+- View system storage usage.
+
+### Cloud Event Logging
+
+- When a file is uploaded to S3, S3 triggers Lambda.
+- Lambda writes event details to CloudWatch Logs.
+- This demonstrates event-driven processing in the cloud.
+
+## 5. Tech Stack
+
+- Node.js
+- Express.js
+- MongoDB Atlas
+- Mongoose
+- JWT
+- Multer
+- AWS SDK for JavaScript
+- Amazon S3
+- AWS Lambda
+- Amazon CloudWatch
+- Amazon CloudFront
+- Amazon EC2
+- Application Load Balancer
+- Auto Scaling Group
+- PM2
+- Nginx
+- HTML, CSS, JavaScript frontend
+
+## 6. Project Structure
 
 ```txt
 config/
@@ -67,301 +188,188 @@ services/
     storageService.js
     localStorageService.js
     s3StorageService.js
-uploads/
 public/
+  index.html
+  app.js
+  styles.css
+uploads/
+  .gitkeep
 server.js
+package.json
+.env.example
 ```
 
-## 3. MongoDB Schemas
+## 7. Data Models
 
 ### User
-- `name` (String, required)
-- `email` (String, required, unique)
-- `password` (String, required, hashed)
-- `phone` (String, required, unique)
-- `address` (String, required)
-- `role` (Number: `0=user`, `1=admin`)
+
+The `User` model stores account information and authorization role.
+
+Main fields:
+
+- `name`
+- `email`
+- `password` hashed before saving
+- `phone`
+- `address`
+- `role` where `0` means user and `1` means admin
 - timestamps
 
 ### File
-- `originalFilename` (String, required)
-- `storedFilename` (String, required, unique)
-- `storagePath` (String, required)
-- `size` (Number, required)
-- `mimeType` (String, required)
-- `uploadedBy` (ObjectId -> users, required)
-- `folder` (String, default `root`)
-- `tags` (String[])
-- `isStarred` (Boolean)
-- `visibility` (`private/public`, default `private`)
-- `isDeleted` (Boolean, default `false`)
-- `deletedAt` (Date, nullable)
-- `deletedBy` (ObjectId -> users, nullable)
-- timestamps (`createdAt` is upload time)
+
+The `File` model stores metadata only. The real file is stored in S3 or local storage depending on `STORAGE_DRIVER`.
+
+Main fields:
+
+- `originalFilename`: original uploaded file name
+- `storedFilename`: generated unique file name
+- `storagePath`: storage object path/key
+- `size`: file size in bytes
+- `mimeType`: file MIME type
+- `uploadedBy`: user who uploaded the file
+- `folder`: logical folder path
+- `tags`: file tags
+- `isStarred`: starred status
+- `visibility`: private or public
+- `isDeleted`: trash state
+- `deletedAt`: deletion time
+- `deletedBy`: user who deleted the file
+- timestamps
 
 ### Folder
-- `name` (String, required)
-- `path` (String, required, unique per user)
-- `createdBy` (ObjectId -> users, required)
-- `isDeleted` (Boolean, default `false`)
-- `deletedAt` (Date, nullable)
-- `deletedBy` (ObjectId -> users, nullable)
-- timestamps (`createdAt` is upload time)
+
+The `Folder` model stores logical folders. Folders are metadata records, not physical folders that must exist on EC2.
+
+Main fields:
+
+- `name`
+- `path`
+- `createdBy`
+- `isDeleted`
+- `deletedAt`
+- `deletedBy`
+- timestamps
 
 ### Share Link
-- `file` (ObjectId -> files)
-- `token` (String, unique)
-- `createdBy` (ObjectId -> users)
-- `expiresAt` (Date)
-- `revokedAt` (Date, nullable)
+
+The `ShareLink` model stores public file sharing tokens.
+
+Main fields:
+
+- `file`
+- `token`
+- `createdBy`
+- `expiresAt`
+- `revokedAt`
 - timestamps
 
 ### Audit Log
-- `actor` (ObjectId -> users)
-- `action` (String)
-- `targetType` (`user/file/folder/system`)
-- `targetId` (ObjectId, optional)
-- `targetLabel` (String)
-- `metadata` (Mixed)
+
+The `AuditLog` model stores important user/admin actions.
+
+Main fields:
+
+- `actor`
+- `action`
+- `targetType`
+- `targetId`
+- `targetLabel`
+- `metadata`
 - timestamps
 
-## 4. API Endpoints
+## 8. API Overview
 
-Base URL: `http://localhost:8080/api/v1`
+Base URL in local development:
 
-### Auth
-
-1. `POST /auth/register`
-- Purpose: register new account
-- Access: public
-- Body:
-```json
-{
-  "name": "Alice",
-  "email": "alice@example.com",
-  "password": "123456",
-  "phone": "0123456789",
-  "address": "HCMC"
-}
+```txt
+http://localhost:8080/api/v1
 ```
 
-2. `POST /auth/login`
-- Purpose: login and receive JWT token
-- Access: public
-- Body:
-```json
-{
-  "email": "alice@example.com",
-  "password": "123456"
-}
+Production domain:
+
+```txt
+https://nimbusdrive.io.vn/api/v1
 ```
 
-3. `GET /auth/me`
-- Purpose: get current user info from token
-- Access: `user/admin`
-- Header: `Authorization: Bearer <token>`
+### Auth APIs
 
-### Files
+| Method | Endpoint | Access | Purpose |
+| --- | --- | --- | --- |
+| POST | `/auth/register` | Public | Register a new user. |
+| POST | `/auth/login` | Public | Login and receive JWT token. |
+| GET | `/auth/me` | User/Admin | Get current logged-in user. |
 
-1. `POST /files/upload`
-- Purpose: upload one or many files and save metadata
-- Access: `user/admin`
-- Content-Type: `multipart/form-data`
-- Form key: `file` or `files` (multiple)
+### File APIs
 
-2. `GET /files/my-files`
-- Purpose: list files uploaded by current user
-- Access: `user/admin`
-- Query: `q, type, folder, starred, sort, page, limit`
+| Method | Endpoint | Access | Purpose |
+| --- | --- | --- | --- |
+| POST | `/files/upload` | User/Admin | Upload one or many files. |
+| GET | `/files/my-files` | User/Admin | List current user's files. |
+| GET | `/files/stats` | User/Admin | Get current user's storage stats. |
+| GET | `/files/:id/preview` | Owner/Admin | Preview file. |
+| GET | `/files/:id/download` | Owner/Admin | Download file. |
+| PATCH | `/files/:id/meta` | Owner/Admin | Rename, move, tag, or star file. |
+| DELETE | `/files/:id` | Owner/Admin | Soft delete file to trash. |
+| POST | `/files/:id/restore` | Owner/Admin | Restore file from trash. |
+| DELETE | `/files/:id/permanent` | Owner/Admin | Permanently delete file. |
+| POST | `/files/:id/share` | Owner/Admin | Create public share link. |
+| GET | `/files/shared/:token/preview` | Public | Preview shared file. |
+| GET | `/files/shared/:token/download` | Public | Download shared file. |
 
-3. `GET /files/stats`
-- Purpose: get user storage stats
-- Access: `user/admin`
+### Folder APIs
 
-4. `GET /files/folders`
-- Purpose: list current user's folders
-- Access: `user/admin`
+| Method | Endpoint | Access | Purpose |
+| --- | --- | --- | --- |
+| GET | `/files/folders` | User/Admin | List folders. |
+| POST | `/files/folders` | User/Admin | Create folder. |
+| DELETE | `/files/folders` | User/Admin | Delete folder. |
+| POST | `/files/folders/restore` | User/Admin | Restore folder. |
+| DELETE | `/files/folders/permanent` | User/Admin | Permanently delete folder. |
+| PATCH | `/files/folders/move` | User/Admin | Move or rename folder path. |
 
-5. `POST /files/folders`
-- Purpose: create folder
-- Access: `user/admin`
-- Body:
-```json
-{
-  "name": "semester8/project"
-}
-```
+### Admin APIs
 
-6. `DELETE /files/folders`
-- Purpose: delete folder (only when empty)
-- Access: `user/admin`
-- Body:
-```json
-{
-  "path": "semester8/project"
-}
-```
+| Method | Endpoint | Access | Purpose |
+| --- | --- | --- | --- |
+| GET | `/admin/files` | Admin | View all files. |
+| GET | `/admin/stats` | Admin | View system statistics. |
+| GET | `/admin/users` | Admin | View all users. |
+| PATCH | `/admin/users/:id/role` | Admin | Change user role. |
+| GET | `/admin/folders` | Admin | View all folders. |
+| DELETE | `/admin/folders` | Admin | Delete user folder as admin. |
+| GET | `/admin/audit-logs` | Admin | View audit logs. |
 
-- Force delete (remove all files/subfolders):
-```json
-{
-  "path": "semester8/project",
-  "force": true
-}
-```
+### Health Check
 
-7. `GET /files/:id/preview`
-- Purpose: preview media/doc files in browser
-- Access: owner or admin
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/healthz` | Used by deployment checks and load balancer health checks. |
 
-8. `GET /files/:id/download`
-- Purpose: download file
-- Access: owner or admin
+## 9. Environment Variables
 
-9. `PATCH /files/:id/meta`
-- Purpose: update metadata (`originalFilename, folder, tags, isStarred`)
-- Access: owner or admin
+Create a `.env` file from `.env.example`. Do not commit `.env` to GitHub.
 
-10. `DELETE /files/:id`
-- Purpose: soft delete (move file to trash)
-- Access: owner or admin
+Example structure:
 
-11. `POST /files/:id/restore`
-- Purpose: restore file from trash
-- Access: owner or admin
-
-12. `DELETE /files/:id/permanent`
-- Purpose: permanently delete file metadata + storage content
-- Access: owner or admin
-
-13. `GET /files/trash/files`
-- Purpose: list deleted files in current user's trash
-- Access: `user/admin`
-
-14. `GET /files/trash/folders`
-- Purpose: list deleted folders in current user's trash
-- Access: `user/admin`
-
-15. `POST /files/folders/restore`
-- Purpose: restore deleted folder (and folder contents)
-- Access: `user/admin`
-
-16. `DELETE /files/folders/permanent`
-- Purpose: permanently delete folder and all files/subfolders in it from trash
-- Access: `user/admin`
-- Body:
-```json
-{
-  "path": "semester8/project"
-}
-```
-
-17. `GET /files/folders/tree`
-- Purpose: get folder tree for current user (API ready, optional in UI)
-- Access: `user/admin`
-
-18. `PATCH /files/folders/move`
-- Purpose: move/rename folder path and update all child folders/files
-- Access: `user/admin`
-- Body:
-```json
-{
-  "fromPath": "semester8/project",
-  "toPath": "semester8/final-project"
-}
-```
-
-19. `POST /files/:id/share`
-- Purpose: create public share link for file
-- Access: owner or admin
-- Body:
-```json
-{
-  "expiresInHours": 24
-}
-```
-
-20. `GET /files/:id/shares`
-- Purpose: list share links of file
-- Access: owner or admin
-
-21. `DELETE /files/shares/:shareId`
-- Purpose: revoke share link
-- Access: owner or admin
-
-22. `GET /files/shared/:token/download`
-- Purpose: public shared download
-- Access: public (valid token)
-
-23. `GET /files/shared/:token/preview`
-- Purpose: public shared preview
-- Access: public (valid token)
-
-### Admin
-
-1. `GET /admin/files`
-- Purpose: admin view all files in system
-- Access: `admin`
-- Query: `q, owner, type, sort, page, limit`
-
-2. `GET /admin/stats`
-- Purpose: get system stats (users/files/storage)
-- Access: `admin`
-
-3. `GET /admin/users`
-- Purpose: list all users for management
-- Access: `admin`
-
-4. `PATCH /admin/users/:id/role`
-- Purpose: update user role (`0` user, `1` admin)
-- Access: `admin`
-- Safeguard:
-  - admin cannot demote self
-  - system always keeps at least one admin
-
-5. `GET /admin/folders`
-- Purpose: list all folders across users
-- Access: `admin`
-
-6. `DELETE /admin/folders`
-- Purpose: delete a user's folder
-- Access: `admin`
-- Body:
-```json
-{
-  "ownerId": "USER_OBJECT_ID",
-  "path": "semester8/project",
-  "force": true
-}
-```
-
-7. `GET /admin/audit-logs`
-- Purpose: view admin/system actions log
-- Access: `admin`
-
-## 5. Local Run
-
-1. Install dependencies:
-```bash
-npm install
-```
-
-2. Create `.env` from `.env.example`:
 ```env
 PORT=8080
-DEV_MODE=development
-MONGO_URL=mongodb://127.0.0.1:27017/nodejs-secure-rest-api
-JWT_SECRET=change_me_please
-TRUST_PROXY=false
+DEV_MODE=production
+MONGO_URL=your_mongodb_atlas_connection_string
+JWT_SECRET=your_strong_jwt_secret
+TRUST_PROXY=true
 CORS_ORIGIN=*
 AUTH_RATE_LIMIT_WINDOW_MS=600000
 AUTH_RATE_LIMIT_MAX=20
-STORAGE_DRIVER=local
-AWS_REGION=ap-southeast-1
-AWS_S3_BUCKET=
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
+
+STORAGE_DRIVER=s3
+S3_USE_USER_PREFIX=false
+AWS_REGION=ap-southeast-2
+AWS_S3_BUCKET=file-storage-project-nhom5
+AWS_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+
 MAX_USER_STORAGE_MB=200
+
 SEED_ADMIN_ON_START=false
 ADMIN_NAME=System Admin
 ADMIN_EMAIL=admin@example.com
@@ -370,70 +378,135 @@ ADMIN_PHONE=0900000000
 ADMIN_ADDRESS=HCMC
 ```
 
-3. Start server:
+For local-only testing, the storage driver can be switched to local:
+
+```env
+STORAGE_DRIVER=local
+```
+
+## 10. Run Locally
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Create `.env` and configure MongoDB, JWT secret, and storage driver.
+
+Start the server:
+
 ```bash
 npm run start
 ```
-or dev mode:
+
+If the project has a development script available, it can also be started with:
+
 ```bash
 npm run server
 ```
 
-4. Open frontend demo:
-- `http://localhost:8080/`
-- Register -> Login -> Upload -> Preview -> Download/Delete
-- Use search/filter/sort and folder/tags
-- If account role is admin (`role=1` in MongoDB), use:
-  - `Admin: All Files`
-  - `Admin: Users`
-- Health check:
-  - `GET http://localhost:8080/healthz`
+Open the web app:
 
-5. Optional: auto seed admin on startup
-- Set in `.env`:
-```env
-SEED_ADMIN_ON_START=true
-ADMIN_NAME=System Admin
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=Admin@123456
-ADMIN_PHONE=0900000000
-ADMIN_ADDRESS=HCMC
-```
-- Restart server. If user `ADMIN_EMAIL` exists, system upgrades role to admin.
-
-## 6. Frontend Demo Features
-- Auth screen (register/login)
-- My Drive dashboard with file cards
-- Multi-file upload (select many files or drag/drop)
-- Upload progress bar
-- Preview modal for image/video/audio/pdf/txt
-- Metadata actions: star, rename, move folder
-- Trash bin with restore/permanent delete
-- File sharing link (copy link)
-- Admin panel: list users and change roles
-- Admin panel: browse all files system-wide
-- Admin panel: browse folders system-wide and force-delete
-- Admin panel: view audit logs
-
-## 7. Cloud-Ready Design (Next Step)
-
-Current implementation uses `STORAGE_DRIVER=local` (via `services/storage/index.js`).
-To migrate to AWS S3 later:
-
-1. Implement `s3StorageService` with real AWS SDK calls (stub already exists):
-- `saveBuffer(file, userId)`
-- `deleteFile(storagePath)`
-- `getAbsolutePath(storagePath)` (or refactor to signed URL flow)
-
-2. Set `.env`:
-```env
-STORAGE_DRIVER=s3
-S3_USE_USER_PREFIX=false
-AWS_REGION=ap-southeast-1
-AWS_S3_BUCKET=your-bucket
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
+```txt
+http://localhost:8080
 ```
 
-This keeps APIs, DB schema, and RBAC mostly unchanged while swapping storage backend.
+Basic local test flow:
 
+1. Register a user.
+2. Login.
+3. Upload a file.
+4. Preview or download the file.
+5. Rename, move, star, or delete the file.
+6. Restore or permanently delete from trash.
+7. Login as admin and check admin pages.
+
+## 11. Production Deployment Summary
+
+The production deployment uses EC2, PM2, Nginx, and AWS services.
+
+Typical deployment steps:
+
+1. Create EC2 instance or Auto Scaling launch template.
+2. Install Node.js and npm.
+3. Clone the GitHub repository.
+4. Run `npm install`.
+5. Create `.env` directly on the server.
+6. Start the app using PM2.
+7. Configure Nginx as a reverse proxy.
+8. Configure HTTPS using Certbot and Let's Encrypt.
+9. Attach EC2 instances to the Application Load Balancer target group.
+10. Configure S3, IAM, Lambda, CloudWatch, and CloudFront.
+
+Useful PM2 commands:
+
+```bash
+pm2 start server.js --name filestorage
+pm2 status
+pm2 restart filestorage --update-env
+pm2 logs filestorage
+pm2 save
+```
+
+## 12. Demo Flow
+
+Recommended final demo flow:
+
+1. Open `https://nimbusdrive.io.vn`.
+2. Login as a demo user.
+3. Upload an image or small file.
+4. Open S3 bucket and show the uploaded object.
+5. Open MongoDB Atlas and show the file metadata document.
+6. Open Lambda and show the S3 trigger.
+7. Open CloudWatch Logs and show the upload event log.
+8. Open EC2 instances and show multiple backend servers.
+9. Open Target Group and show healthy targets.
+10. Open Auto Scaling Group and show desired/min/max capacity.
+11. Open CloudFront distribution and explain CDN support.
+12. Explain IAM permissions without showing secrets.
+
+## 13. Security Notes
+
+- Never commit `.env` or AWS credentials.
+- If an AWS access key was exposed, rotate or delete it immediately.
+- Use least-privilege IAM permissions for S3 and Lambda.
+- Keep MongoDB Atlas connection string private.
+- Use HTTPS in production.
+- Use `TRUST_PROXY=true` behind Nginx or Load Balancer.
+- Consider AWS Secrets Manager or Parameter Store for production secrets.
+- Restrict S3 bucket access and avoid making the bucket public unless necessary.
+
+## 14. Future Improvements
+
+Possible improvements after the current version:
+
+- Integrate CloudFront more deeply into file preview/download URLs.
+- Use signed URLs for private S3/CloudFront file access.
+- Add Lambda-based thumbnail generation for images.
+- Add Lambda-based virus scanning for uploaded files.
+- Add CloudWatch alarms and SNS notifications.
+- Add CI/CD deployment with GitHub Actions.
+- Add AWS WAF in front of the Load Balancer.
+- Move secrets to AWS Secrets Manager or SSM Parameter Store.
+- Consider Amazon DocumentDB or DynamoDB if an AWS-native database is required.
+
+## 15. Final Project Status
+
+Current status:
+
+- Web application is running.
+- Domain and HTTPS are configured.
+- Register and login work.
+- User and admin roles work.
+- File upload works.
+- Files are stored in Amazon S3.
+- Metadata is stored in MongoDB Atlas.
+- Lambda receives S3 upload events.
+- CloudWatch stores logs.
+- Application Load Balancer distributes traffic to EC2 instances.
+- Auto Scaling Group maintains multiple EC2 instances.
+- CloudFront distribution has been created for CDN support.
+- IAM users/policies are used for controlled AWS access.
+
+Nimbus Drive demonstrates a cloud-based application design where compute, storage, database, monitoring, and scaling are separated into independent cloud services.
